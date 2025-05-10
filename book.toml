@@ -1,0 +1,21 @@
+[book]
+authors = ["Chris Bailey"]
+language = "zh-CN"
+multilingual = false
+src = "src"
+title = "Lean 4 类型检查"
+
+[output.html]
+git-repository-url = "https://github.com/Lean-zh/type_checking"
+additional-css = ["./assets/pagetoc.css"]
+additional-js = [
+  "assets/blockPlay.js",
+  "assets/filePlay.js",
+  "assets/pagetoc.js",
+]
+
+# Settings to overwrite the edit button and make it a code execution button.
+# edit-url-template = "https://raw.githubusercontent.com/Lean-zh/type_checking/master/{path}"
+
+# To ensure that the 404 page functions properly.
+# site-url = "https://github.com/Lean-zh/type_checking"
