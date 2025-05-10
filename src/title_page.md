@@ -1,3 +1,3 @@
-# Type Checking in Lean 4
+# Lean 4 类型检查
 
-This document exists to help readers better understand Lean's kernel, clarify the trust assumptions involved in using Lean, and serve as a resource for those who wish to write their own external type checkers for Lean's kernel language.
+本文档旨在帮助读者更好地理解 Lean 的内核，解释使用 Lean 所涉及的信任假设，并为希望为 Lean 内核语言编写自己的外部类型检查器的读者提供资源。
