@@ -1,12 +1,12 @@
 # Lean 4 类型检查
 
-[Type Checking in Lean 4](./title_page.md)
-[Foreword](./foreword.md)
+[Lean 4 类型检查](./title_page.md)
+[前言](./foreword.md)
 
-- [What's a kernel?](./whats_a_kernel.md)
-- [Trust](./trust/trust.md)
-    - [Unsafe declarations](./trust/unsafe_declarations.md)
-    - [Adversarial inputs](./trust/adversarial_inputs.md)
+- [什么是内核](./whats_a_kernel.md)
+- [信任](./trust/trust.md)
+    - [非安全声明](./trust/unsafe_declarations.md)
+    - [对抗性输入](./trust/adversarial_inputs.md)
 - [Export format](./export_format.md)
 - [Kernel concepts](./kernel_concepts/kernel_concepts.md)
     - [The big picture](./kernel_concepts/the_big_picture.md)

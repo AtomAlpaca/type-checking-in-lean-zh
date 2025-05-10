@@ -1,6 +1,6 @@
-# Foreword
+# 前言
 
-The author would like to thank:
+鸣谢：
 
 Mario Carneiro
 
@@ -12,10 +12,10 @@ Gabriel Ebner
 
 Jonathan Protzenko
 
-The [Lean Zulip](https://leanprover.zulipchat.com/) community.
+[Lean Zulip](https://leanprover.zulipchat.com/) 社区。
 
-Each and every contributor to Lean4, Mathlib, and the broader Lean ecosystem.
+每一位 Lean4、Mathlib 和 Lean 生态贡献者。
 
 ---
 
-This book is dedicated to the memory of Philip Elliot Bailey _(31 January, 1987 - 9 December, 2023)_.
+致 Philip Elliot Bailey _(1987.1.31 - 2023.12.9)_.
