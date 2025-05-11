@@ -1,27 +1,27 @@
-# Export format
+# 导出格式
 
-An exporter is a program which emits Lean declarations using the kernel language, for consumption by external type checkers. Producing an export file is a complete exit from the Lean ecosystem; the data in the file can be checked with entirely external software, and the exporter itself is not a trusted component. Rather than inspecting the export file itself to see whether the declarations were exported as the developer intended, the exported declarations are checked by the external checker, and are displayed back to the user by a pretty printer, which produces output far more readable than the export file. Readers can (and are encouraged to) write their own external checkers for Lean export files.
+导出器（exporter）是一种程序，它以内核语言导出 Lean 中的声明，以便外部的类型检查器使用。生成一个导出文件即意味着完全脱离了 Lean 生态系统；文件中的数据可由完全外部的软件进行检查，且导出器自身并不是一个可信组件。用户无需直接查看导出文件，以确认导出的声明是否符合开发者的原意；相反，导出的声明将由外部检查器检查，再通过美观打印器（pretty printer）以更易读的形式展示给用户。读者可以（且被鼓励）自行编写外部检查器来处理 Lean 的导出文件。
 
-The official exporter is [lean4export](https://github.com/leanprover/lean4export).
+官方的导出器为：[lean4export](https://github.com/leanprover/lean4export)。
 
+官方导出器的 master 分支沿用了 Lean 3 的基本格式（参见 [此处](https://github.com/leanprover/lean3/blob/master/doc/export_format.md)），但增加了 Lean 4 新增的内容，包括 **投影（projections）** 、 **字面量（literals）** 和显式的 let 表达式（let expressions）支持。这些新增内容已在 lean4export 的 readme 中详细描述。
 
-The master branch of the official exporter uses the same base format as lean 3 [here](https://github.com/leanprover/lean3/blob/master/doc/export_format.md), with the addition of the new-to-lean4 items, which are projections, literals, and explicitly support for let expressions. The new stuff is outlined in the lean4export readme.
+另外，[此 lean4export 的 fork 版本](https://github.com/ammkrn/lean4export/tree/format2024)对导出格式进行了轻微修改，具体说明如下：该版本新增了对 **可约性提示（reducibility hints）** 、 **商类型声明（quotient declarations）** 、递归器（recursors）**以及** ι-化简规则（rec rules）的导出支持。这些新增导出特性旨在提供更大的实现灵活性与更好的性能表现，同时也便于开发更为简洁的软件，以便于试验；并能简化类型检查器的自举（bootstrapping）及测试过程。
 
-A slightly modified version of the export format supported by [this fork](https://github.com/ammkrn/lean4export/tree/format2024) of lean4export is described below. These modifications export reducibility hints, quotient declarations, recursors, and iota reduction rules (rec rules). These additional exports were added to give more flexibility in implementation and for performance, but they also allow for the development of more minimized software used for experimentation, and can make bootstrapping and testing a checker easier for developers.
-
-There are also [ongoing discussions](https://github.com/leanprover/lean4export/issues/3) about how best to evolve the export format.
+此外，社区也在[持续讨论](https://github.com/leanprover/lean4export/issues/3)如何更好地优化导出格式。
 
 ## (ver 0.1.2)
 
-For clarity, some of the compound items are decorated here with a name, for example `(name : T)`, but they appear in the export file as just an element of `T`.
+为了清晰起见，下述复合元素标记了名称，例如 `(name : T)`，但在实际导出文件中，它们仅表现为类型 `T` 的元素，不包含额外标记。
 
-The export scheme for mutual and nested inductives is as follows: 
-+ `Inductive.inductiveNames` contains the names of all types in the `mutual .. end` block. The names of any other inductive types used in a nested (but not mutual) construction will not be included.
-+ `Inductive.constructorNames` contains the names of all constructors for THAT inductive type, and no others (no constructors of the other types in a mutual block, and no constructors from any nested construction).
+互递归（mutual）与嵌套（nested）归纳类型的导出方案如下：
 
-**NOTE:** readers writing their own parsers and/or checkers should initialize names[0] as the anonymous name, and levels[0] as universe zero, as they are not emitted by the exporter, but are expected to occupy the name and level indices for 0.
+* `Inductive.inductiveNames` 包含 `mutual ... end` 区块中所有归纳类型的名称。不包括任何其他嵌套（但非互递归）构造中的归纳类型名称。
+* `Inductive.constructorNames` 仅包含对应归纳类型自身的所有构造子（constructor）名称，不含其他类型的构造子（即不含互递归区块中其他类型的构造子，也不含嵌套构造中的构造子）。
 
-```
+**注意**：自己编写解析器和检查器的读者应注意初始化 `names[0]` 为匿名名称（anonymous name），并初始化 `levels[0]` 为宇宙层级零（universe zero），因为导出器不会显式导出它们，但会假定它们分别占据索引 0 的名称和层级位置。
+
+```lean
 File ::= ExportFormatVersion Item*
 
 ExportFormatVersion ::= nat '.' nat '.' nat

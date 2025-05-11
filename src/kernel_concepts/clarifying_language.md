@@ -1,39 +1,66 @@
-# Clarifying language
+# 术语解释
 
+## Type、Sort 与 Prop
 
-## Type, Sort, Prop
+* `Prop` 即为 `Sort 0`。
+* `Type n` 即为 `Sort (n+1)`。
+* 内核中实际表示这些概念的是统一的 `Sort n`，用户始终可以直接使用它。
 
-`Prop` refers to `Sort 0`
+之所以有时使用 `Type <N>` 或者 `Prop` 而非统一使用 `Sort n`，是因为 `Type <N>` 中的元素具有一些重要的性质与行为，是 `Prop` 中元素所不具备的，反之亦然。
 
-`Type n` refers to `Sort (n+1)`
+例如：`Prop` 中元素具有 **定义性的证明无关性（definitional proof irrelevance）** ，而 `Type _` 中的元素可直接使用 **大消去（large elimination）** ，无需满足其他额外条件。
 
-`Sort n` is how these are actually represented in the kernel, and can always be used.
+## Level/universe 与 Sort
 
-The reason why `Type <N>` and `Prop` are sometimes used instead of always adhering to `Sort n` is that elements of `Type <N>` have certain important qualities and behaviors that are not observed by those of `Prop` and vice versa.
+* 术语“level”（层级）和“universe”（宇宙）实际上是同义的，指的都是内核中同一种对象。
 
-Example: elements of `Prop` can be considered for definitional proof irrelevance, while elements of `Type _` can use large elimination without needing to satisfy other tests.
+偶尔有一种细微的区别，即“宇宙参数”（universe parameter）通常暗含着特指变量形式的层级。这是因为：
 
+* “宇宙参数”特指在 Lean 声明中用作参数化的层级集合，而这些只能是变量名（identifiers）。
+* 例如，一个 Lean 声明可以写成：
 
-## Level/universe and Sort
+  ```lean
+  def Foo.{u} ..
+  ```
 
-The terms "level" and "universe" are basically synonymous; they refer to the same kind of kernel object.
+  这里的含义是「定义 Foo，以宇宙变量 u 为参数化」。
 
-A small distinction that's sometimes made is that "universe parameter" may be implicitly restricted to levels that are variables/parameters. This is because "universe parameters" refers to the set of levels that parameterize a Lean declaration, which can only be identifiers, and are therefore restricted to identifiers. If this doesn't mean anything to you, don't worry about it for now. As an example, a Lean declaration may begin with `def Foo.{u} ..` meaning "a definition parameterized by the universe variable `u`", but it may not begin with `def Foo.{1} ..`, because `1` is an explicit level, and not a parameter.
+  但不能直接写成：
 
-On the other hand, `Sort _` is an expression that represents a level.
+  ```lean
+  def Foo.{1} ..
+  ```
 
-## Value vs. type
+  因为 `1` 是一个明确的宇宙层级，而非参数（parameter）。
 
-Expressions can be either values or types. Readers are probably familiar with the idea that `Nat.zero` is a value, while `Nat` is a type. An expression `e` is a value or "value level expression" if `infer e != Sort _`. An expression `e` is a type or "type level expression" if `infer(e) = Sort _`.
+另一方面，`Sort _` 则是表示某个宇宙层级的表达式。
 
+## 值与类型
 
-## Parameters vs. indices
+Lean 中的表达式可以是 **值** 或者 **类型**。
 
-The distinction between a parameter and index comes into play when dealing with inductive types. Roughly speaking, elements of a telescope that come before the colon in a declaration are parameters, and elements that come after the colon are indices:
+* 用户可能熟悉的例子：
 
-```
-      parameter ----v         v---- index
+  * `Nat.zero` 是一个 **值**；
+  * `Nat` 是一个 **类型**。
+
+具体而言，对于表达式 `e`：
+
+* 若 `infer e ≠ Sort _`，则称为 **值表达式**。
+* 若 `infer e = Sort _`，则称为 **类型表达式**。
+
+## 参数与指标
+
+参数（parameter）与指标（index）的区别在处理归纳类型时尤为重要。
+
+简单来说，在 Lean 中的归纳类型声明里，「冒号之前」的参数列表为 **参数**，「冒号之后」为 **指标**：
+
+```lean
+         -- 参数 ----v         v---- 指标
 inductive Nat.le (n : Nat) : Nat → Prop
 ```
 
-The distinction is non-negligible within the kernel, because parameters are fixed within a declaration, while indices are not.
+这一差别在内核中至关重要：
+
+* 参数在单个归纳声明的定义中是固定不变的；
+* 而指标则在具体构造中并不固定。

@@ -1,19 +1,48 @@
-# Weak and strong reduction
+# 弱归约与强归约
 
-The implementation details of Lean's reduction strategies is discussed in [another chapter](../type_checking/reduction.md); this section is specifically to clarify the difference between the general concepts of weak and strong reduction.
+Lean 归约策略的具体实现细节见[另一个章节](../type_checking/reduction.md)；本节专门澄清“弱归约”和“强归约”这两个概念的区别。
 
-## Weak reduction
+## 弱归约
 
-Weak reduction refers to reduction that stops at binders which do not have an argument applied to them. By binders, we mean lambda, pi, and let expressions.
+**弱归约** 指的是遇到未施加足够参数的绑定结构（binders）时便停止的归约策略。这里的绑定结构包括 lambda 表达式（`λ`）、Pi 表达式（`Π`）和 let 表达式。
 
-For example, weak reduction can reduce `(fun (x y : Nat) => y + x) (0 : Nat)` to `(fun (y : Nat) => y + 0)`, but can do no further reduction.
+举个例子，弱归约可以将表达式：
 
-When we say or 'weak head normal form reduction', or just reduction without specifically identifying it as 'strong', we're talking about weak reduction. Strong reduction just happens as a byproduct of applying weak reduction after we've opened a binder somewhere else. 
+```lean
+(fun (x y : Nat) => y + x) (0 : Nat)
+```
 
-## Strong reduction
+归约为：
 
-Strong reduction refers to reduction under open binders; when we run across a binder without an accompanying argument (like a lambda expression with no `app` node applying an argument), we can traverse into the body and potentially do further reduction by creating and substituting in a free variable. Strong reduction is needed for type inference and definitional equality checking. For type inference, we also need the ability to "re-close" open terms, replacing free variables with the correct bound variables after some reduction has been done in the body. This is not as simple as just replacing it with the same bound variable as before, because bound variables may have shifted, invalidating their old deBruijn index relative to the new rebuilt expression.
+```lean
+(fun (y : Nat) => y + 0)
+```
 
-As with weak reduction, strong reduction can still reduce `(fun (x y : Nat) => y + x) (0 : Nat)` to `(fun (y : Nat) => y + 0)`, and instead of getting stuck, it can continue by substituting `y` for a free variable, reducing the expression further to `((fVar id, y, Nat) + 0)`, and `(fvar id, y, Nat)`. 
+但此时便无法再进一步继续归约了。
 
-As long as we keep the free variable information around _somewhere_, we can re-combine that information with the reduced `(fVar id, y, Nat)` to recreate `(fun (y : Nat) => bvar(0))`
+当我们提到“弱头范式归约（weak head normal form reduction）”或仅仅说“归约”（未明确提到“强归约”）时，我们通常指的都是弱归约。强归约则是在其他地方打开了绑定结构后，再次使用弱归约时所得到的一种副产品。
+
+## 强归约
+
+**强归约** 指的是对开放的绑定结构（open binders）内部进行的归约。换句话说，当遇到一个未施加参数的绑定结构（如一个 lambda 表达式没有对应的 `app` 应用节点提供参数）时，强归约允许深入表达式内部，通过创建自由变量并进行替换，以进一步完成归约过程。
+
+强归约对于类型推断和定义等价性检查是必需的。对于类型推断而言，我们还需要能够在开放的项内部进行归约之后重新闭合这些开放的项，即在完成某些归约之后，用正确的绑定变量替换回自由变量。这并不简单，因为原本绑定变量的 deBruijn 索引可能因归约过程而发生位移，不能再直接重用原来的索引来替换自由变量。
+
+例如，如同弱归约一样，强归约也可以将表达式：
+
+```lean
+(fun (x y : Nat) => y + x) (0 : Nat)
+```
+
+归约为：
+
+```lean
+(fun (y : Nat) => y + 0)
+```
+
+与弱归约不同的是，强归约此时并不会停下来，而是继续前进：
+
+* 在 `(fun (y : Nat) => y + 0)` 内部，将绑定变量 `y` 替换为某个自由变量（例如 `(fVar id, y, Nat)`），继续进行归约；
+* 归约过程可能得到表达式：`((fVar id, y, Nat) + 0)` 以及 `(fVar id, y, Nat)`。
+
+只要我们在某个地方保存了这个自由变量的信息，就可以在归约完成后，将该信息与 `(fVar id, y, Nat)` 重新组合，以重建闭合的表达式 `(fun (y : Nat) => bvar(0))`。

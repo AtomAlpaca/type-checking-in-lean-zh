@@ -1,4 +1,4 @@
-# Further reading
+# 延伸阅读
 
 + Mario Carneiro's [thesis on Lean's type theory](https://github.com/digama0/lean-type-theory)
 
