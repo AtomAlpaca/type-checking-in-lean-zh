@@ -1,8 +1,8 @@
-# Expressions
+# 表达式
 
-## Complete syntax
+## 完整语法
 
-Expressions will be explained in more detail below, but just to get it out in the open, the complete syntax for expressions, including the string and nat literal extensions, is as follows:
+关于表达式的具体解释稍后会更详细展开，这里先完整列出表达式的所有语法形式（包括字符串和自然数字面量扩展）：
 
 ```
 Expr ::= 
@@ -30,68 +30,72 @@ let ::= Name, (binderType : Expr), (val : Expr) (body : Expr)
 proj ::= Name Nat Expr
 literal ::= natLit | stringLit
 
--- Arbitrary precision nat/unsigned integer
+-- 任意精度无符号整数
 natLit ::= Nat
--- UTF-8 string
+-- UTF-8 字符串
 stringLit ::= String
 
--- fvarId can be implemented by unique names or deBruijn levels; 
--- unique names are more versatile, deBruijn levels have better
--- cache behavior
+-- fvarId 可以通过唯一命名或deBruijn层级来实现; 
+-- 唯一命名更通用，deBruijn层级有更好的缓存性能
 freeVariable ::= Name, Expr, BinderInfo, fvarId
 ```
+一些说明：
 
-Some notes:
+* 用于自然数字面量的 `Nat` 应该是任意精度自然数（大整数）。
 
-+ The `Nat` used by nat literals should be an arbitrary precision natural/bignum.
+* 带绑定器的表达式（lambda、pi、let、自由变量）可以将三个参数（绑定器名称 binder\_name、绑定器类型 binder\_type、绑定器风格 binder\_style）合并成一个参数 `Binder`，其中 `Binder ::= Name BinderInfo Expr`。在其他伪代码中，我通常会假设它们具有这种属性，因为这样更易读。
 
-+ The expressions that have binders (lambda, pi, let, free variable) can just as easily bundle the three arguments (binder_name, binder_type, binder_style) as one argument `Binder`, where a binder is `Binder ::= Name BinderInfo Expr`. In the pseudocode that appears elsewhere I will usually treat them as though they have that property, because it's easier to read.
+* 自由变量的标识符可以是唯一标识符，也可以是 deBruijn 层级。
 
-+ Free variable identifiers can be either unique identifiers, or they can be deBruijn levels.
+* Lean 内部使用的表达式类型还有一个 `mdata` 构造子，用于声明附带元数据的表达式。这些元数据不会影响内核中表达式的行为，因此这里不包含该构造子。
 
-+ The expression type used in Lean proper also has an `mdata` constructor, which declares an expression with attached metadata. This metadata does not effect the expression's behavior in the kernel, so we do not include this constructor.
+## 绑定器信息（Binder information）
 
-
-## Binder information
-
-Expressions constructed with the lambda, pi, let, and free variable constructors contain binder information, in the form of a name, a binder "style", and the binder's type. The binder's name and style are only for use by the pretty printer, and do not alter the core procedures of inference, reduction, or equality checking. In the pretty printer however, the binder style may alter the output depending on the pretty printer options. For example, the user may or may not want to display implicit or instance implicits (typeclass variables) in the output.
+由 lambda、pi、let 和自由变量构造的表达式都包含绑定器信息，表现为名称、绑定器“风格”和绑定器类型。绑定器的名称和风格仅供美化打印器使用，不影响推断、归约或等价性检查等核心过程。不过美化打印器会根据绑定器风格和打印选项来调整输出，比如用户可能希望显示或隐藏隐式参数或实例隐式（类型类变量）。
 
 ### Sort
 
-`sort` is simply a wrapper around a level, allowing it to be used as an expression.
+`sort` 只是对层级的包装，允许其作为表达式使用。
 
+### 绑定变量（Bound variables）
 
-### Bound variables
+绑定变量以自然数实现，表示 [deBruijn 索引](https://en.wikipedia.org/wiki/De_Bruijn_index)。
 
-Bound variables are implemented as natural numbers representing [deBruijn indices](https://en.wikipedia.org/wiki/De_Bruijn_index).
+### 自由变量（Free variables）
 
-### Free variables
+自由变量用来在绑定器不可用的情况下，传递有关绑定变量的信息。通常这是因为内核已经进入绑定表达式的主体部分，选择不携带结构化的绑定上下文，而是临时用自由变量替换绑定变量，待需要时再用新的（可能不同的）绑定变量重构绑定器。
 
-Free variables are used to convey information about bound variables in situations where the binder is currently unavailable. Usually this is because the kernel has traversed into the body of a binding expression, and has opted not to carry a structured context of the binding information, instead choosing to temporarily swap out the bound variable for a free variable, with the option of swapping in a new (maybe different) bound variable to reconstruct the binder. This unavailability description may sound vague, but a literal explanation that might help is that expressions are implemented as trees without any kind of parent pointer, so when we descend into child nodes (especially across function boundaries), we end up just losing sight of the elements above where we currently are in a given expression.
+这种“不可用”的描述或许模糊，但直观来说，表达式是以树结构实现的，且没有任何指向父节点的指针，因此当我们深入子节点（尤其是函数边界）时，会丢失对当前表达式中“上方”元素的直接访问。
 
-When an open expression is closed by reconstructing binders, the bindings may have changed, invalidating previously valid deBruijn indices. The use of unique names or deBruijn levels allow this re-closing of binders to be done in a way that compensates for any changes and ensures the new deBruijn indices of the re-bound variables are valid with respect the reconstructed telescope (see [this section](./kernel_concepts.md#implementing-free-variable-abstraction)).
+当对一个开放表达式通过重构绑定器进行闭合时，绑定关系可能已经改变，导致之前有效的 deBruijn 索引失效。使用唯一名称或 deBruijn 层级可以在重闭绑定时补偿这些变化，确保重绑定变量的新 deBruijn 索引相对于重建的望远镜是有效的（详见[实现自由变量抽象](./kernel_concepts.md#implementing-free-variable-abstraction)部分）。
 
-Going forward, we may use some form of the term "free variable identifier" to refer to the objects in whatever scheme (unique IDs or deBruijn levels) an implementation may be using.
+今后，我们可能会用“自由变量标识符”一词来泛指实现中使用的对象，无论是唯一 ID 还是 deBruijn 层级。
 
 ### `Const`
 
-The `const` constructor is how an expression refers to another declaration in the environment, it must do so by reference. 
+`const` 构造子表示表达式中对环境中另一个声明的引用，必须通过名称引用。
 
-In example below, `def plusOne` creates a `Definition` declaration, which is checked, then admitted to the environment. Declarations cannot be placed directly in expressions, so when the type of `plusOne_eq_succ` invokes the previous declaration `plusOne`, it must do so by name. An expression is created: `Expr.const (plusOne, [])`, and when the kernel finds this `const` expression, it can look up the declaration referred to by name, `plusOne`, in the environment:
+例如，下面代码：
 
-```
+```lean
 def plusOne : Nat -> Nat := fun x => x + 1
 
 theorem plusOne_eq_succ (n : Nat) : plusOne n = n.succ := rfl 
 ```
 
-Expressions created with the `const` constructor also carry a list of levels which are substituted into any unfolded or inferred declarations taken from the environment by looking up the definition the `const` expression refers to. For example, inferring the type of `const List [Level.param(x)]` involves looking up the declaration for `List` in the current environment, retrieving its type and universe parameters, then substituting `x` for the universe parameter with which `List` was initially declared.
+其中 `def plusOne` 创建了一个 `Definition` 声明，经检查后加入环境。声明不能直接嵌入表达式中，因此当 `plusOne_eq_succ` 的类型使用之前声明的 `plusOne` 时，必须通过名称调用。于是产生表达式：
 
+```
+Expr.const (plusOne, [])
+```
 
-### Lambda, Pi
+内核遇到该 `const` 表达式时，会在环境中查找名称为 `plusOne` 的声明。
 
-`lambda` and `pi` expressions (Lean proper uses the name `forallE` instead of `pi`) refer to function abstraction and the "forall" binder (dependent function types) respectively. 
+用 `const` 构造的表达式还携带一个层级列表，这些层级会替换环境中对应定义的宇宙参数。例如，推断 `const List [Level.param(x)]` 的类型时，会查找当前环境中的 `List` 声明，获取其类型和宇宙参数，然后用 `x` 替换 `List` 最初声明时的宇宙参数。
 
+### Lambda、Pi
+
+`lambda` 和 `pi` 表达式分别表示函数抽象和“forall”绑定器（依赖函数类型）。Lean 内部将 `pi` 命名为 `forallE`。
 
 ```
   binderName      body
@@ -106,7 +110,7 @@ fun (foo : Bar) => 0
 
 ### Let
 
-`let` is exactly what it sounds like. While `let` expressions are binders, they do not have a `BinderInfo`, their binder info is treated as `Default`.
+`let` 就是字面意思的 let 表达式。虽然 `let` 表达式是绑定器，但它们没有显式的 `BinderInfo`，其绑定信息被视为默认（`Default`）。
 
 ```
   binderName      val
@@ -116,10 +120,15 @@ let (foo : Bar) := 0; foo
         binderType     .... body
 ```
 
-
 ### App
 
-`app` expressions represent the application of an argument to a function. App nodes are binary (have only two children, a single function and an single argument), so `f x_0 x_1 .. x_N` is represented by `App(App(App(f, x_0), x_1)..., x_N)`, or visualized as a tree:
+`app` 表达式表示函数对参数的应用。`app` 节点是二叉的（只有两个子节点：一个函数和一个参数），因此表达式 `f x_0 x_1 ... x_N` 会被表示为嵌套的形式：
+
+```
+App(App(App(f, x_0), x_1) ..., x_N)
+```
+
+也可以用树状结构来形象表示：
 
 ```
                 App
@@ -135,25 +144,41 @@ let (foo : Bar) := 0; foo
 
 ```
 
-An exceedingly common kernel operation for manipulating expressions is folding and unfolding sequences of applications, getting `(f, [x_0, x_1, .., x_N])` from the tree structure above, or folding `f, [x_0, x_1, .., x_N]` into the tree above.
+操作表达式时，内核中一个非常常见的操作是 **折叠（folding）** 与 **展开（unfolding）** 一系列函数应用。它可以将上文中的树形结构转换成 `(f, [x_0, x_1, ..., x_N])` 的形式，或者反向将 `(f, [x_0, x_1, ..., x_N])` 折叠成那样的树形结构。
 
+---
 
-### Projections
+### 投影（Projections）
 
-The `proj` constructor represents structure projections. Inductive types that are not recursive, have only one constructor, and have no indices can be structures.
+`proj` 构造子表示结构体字段的投影。非递归、只有一个构造子且无指标（indices）的归纳类型可以被视为结构体。
 
-The constructor takes a name, which is the name of the type, a natural number indicating the field being projected, and the actual structure the projection is being applied to.
+`proj` 接受三个参数：
 
-Be aware that in the kernel, projection indices are 0-based, despite being 1-based in Lean's vernacular, where 0 is the first non-parameter argument to the constructor.
+* 类型的名称；
+* 一个自然数，表示要投影的字段索引；
+* 要应用投影的实际结构表达式。
 
-For example, the kernel expression `proj Prod 0 (@Prod.mk A B a b)` would project the `a`, because it is the 0th field after skipping the parameters `A` and `B`.
+需要注意的是，内核中的投影索引是 **从 0 开始计数** 的，而 Lean 表层语言中是从 1 开始的，且 0 表示跳过构造子参数后的第一个非参数参数。
 
-While the behavior offered by `proj` can be accomplished by using the type's recursor, `proj` more efficiently handles frequent kernel operations.
+例如，内核表达式：
 
-### Literals
+```
+proj Prod 0 (@Prod.mk A B a b)
+```
 
-Lean's kernel optionally supports arbitrary precision Nat and String literals. As needed, the kernel can transform a nat literal `n` to `Nat.zero` or `Nat.succ m`, or convert a string literal `s` to `String.mk List.nil` or `String.mk (List.cons (Char.ofNat _) ...)`.
+会投影字段 `a`，因为它是跳过参数 `A` 和 `B` 后的第 0 个字段。
 
-String literals are lazily converted to lists of characters for testing definitional equality, and when they appear as the major premise in reduction of a recursor.
+虽然使用类型的递归器（recursor）也能实现 `proj` 的功能，但 `proj` 能更高效地处理内核中的常用操作。
 
-Nat literals are supported in the same positions as strings (definitional equality and major premises of a recursor application), but the kernel also provide support for addition, multiplication, exponentiation, subtraction, mod, division, as well as boolean equality and "less than or equal" comparisons on nat literals.
+---
+
+### 字面量（Literals）
+
+Lean 内核可选支持任意精度的自然数（Nat）和字符串（String）字面量。
+
+* 内核可以将自然数字面量 `n` 转换为 `Nat.zero` 或 `Nat.succ m` 形式；
+* 字符串字面量 `s` 则可转换为 `String.mk List.nil` 或 `String.mk (List.cons (Char.ofNat _) ...)`。
+
+字符串字面量采用惰性转换成字符列表，用于定义等价性测试以及递归器归约时的主要前提。
+
+自然数字面量可用在与字符串相同的场合（定义等价性和递归器的主要前提），除此之外，内核还支持对自然数字面量的加法、乘法、指数运算、减法、模运算、除法，以及布尔型的等于和“小于等于”比较操作。

@@ -1,7 +1,6 @@
-# Declarations
+# 声明
 
-Declarations are the big ticket items, and are the last domain elements we need to define.
-
+声明（Declarations）是核心关键部分，也是我们需要定义的最后一类领域元素。
 
 ```
 declarationInfo ::= Name, (universe params : List Level), (type : Expr)
@@ -42,32 +41,39 @@ declar ::=
 RecRule ::= (constructor name : Name), (number of constructor args : Nat), (val : Expr)
 ```
 
+## 声明检查
 
-## Checking a declaration
+对于所有声明，除针对某些声明类型的额外检查外，都会先执行以下初步检查：
 
+* 声明中 `declarationInfo` 的宇宙参数不得有重复。例如，声明 `def Foo.{u, v, u} ...` 是不允许的。
+* 声明的类型不得包含自由变量；所有“完成”的声明中的变量都必须对应某个绑定器。
+* 声明的类型必须是一个类型（即 `infer declarationInfo.type` 必须产生 `Sort`）。在 Lean 中，声明 `def Foo : Nat.succ := ..` 不被允许，因为 `Nat.succ` 是一个值，而非类型。
 
-For all declarations, the following preliminary checks are performed before any additional procedures specific to certain kinds of declaration:
+### 公理
 
-+ The universe parameters in the declaration's `declarationInfo` must not have duplicates. For example, a declaration `def Foo.{u, v, u} ...` would be prohibited.
+对公理的检查仅限于上述所有声明通用的检查，确保其 `declarationInfo` 合法。如果公理的宇宙参数有效且类型无自由变量，则可被加入环境。
 
-+ The declaration's type must not have free variables; all variables in a "finished" declaration must correspond to a binder.
+### 商类型
 
-+ The declaration's type must be a type (`infer declarationInfo.type` must produce a `Sort`). In Lean, a declaration `def Foo : Nat.succ := ..` is not permitted; `Nat.succ` is a value, not a type.
+`Quot` 声明包括 `Quot`、`Quot.mk`、`Quot.ind` 和 `Quot.lift`。这些声明有预定的类型，在 Lean 理论中被认为是合理的。因此环境中商类型声明必须完全匹配这些类型。它们在内核实现中是硬编码的，因为它们复杂度不高。
 
-### Axiom
+### 定义、定理与不透明声明
 
-The only checks done against axioms are those done for all declarations which ensure the `declarationInfo` passes muster. If an axiom has a valid set of universe parameters and a valid type with no free variables, it is admitted to the environment.
+定义、定理和不透明声明（opaque）都同时包含一个类型和值。检查这些声明时，会先推断声明值的类型，然后断言推断出的类型与 `declarationInfo` 中指定的类型定义等价。
 
-### Quot
+对于定理：
 
-The `Quot` declarations are `Quot`, `Quot.mk`, `Quot.ind`, and `Quot.lift`. These declarations have prescribed types which are known to be sound within Lean's theory, so the environment's quotient declarations must match those types exactly. These types are hard-coded into kernel implementations since they are not prohibitively complex.
+* `declarationInfo` 中的类型是用户声称的类型，即用户试图证明的命题；
+* 值是用户提供的该命题的证明。
 
-### Definition, theorem, opaque
+推断该值的类型即是验证该证明实际证明了什么，而定义等价断言保证了该证明的命题正是用户声称要证明的命题。
 
-Definition, theorem, and opaque are interesting in that they both a type and a value. Checking these declarations involves inferring a type for the declaration's value, then asserting that the inferred type is definitionally equal to the ascribed type in the `declarationInfo`.
+#### 可展性提示
 
-In the case of a theorem, the `declarationInfo`'s type is what the user claims the type is, and therefore what the user is claiming to prove, while the value is what the user has offered as a proof of that type. Inferring the type of the received value amounts to checking what the proof is actually a proof of, and the definitional equality assertion ensures that the thing the value proves is actually what the user intended to prove.
+可展性提示（Reducibility hints）包含声明应该如何展开的信息：
 
-#### Reducibility hints
+* `abbreviation` 通常总是会被展开；
+* `opaque` 不会被展开；
+* `regular N` 是否展开则依赖于 `N` 的值。
 
-Reducibility hints contain information about how a declaration should be unfolded. An `abbreviation` will generally always be unfolded, `opaque` will not be unfolded, and `regular N` might be unfolded depending on the value of `N`. The `regular` reducibility hints correspond to a definition's "height", which refers to the number of declarations that definition uses to define itself. A definition `x` with a value that refers to definition `y` will have a height value greater than `y`.
+`regular` 的可展性提示对应于定义的“高度”，指定义自身依赖的声明数量。若定义 `x` 的值中引用了定义 `y`，则 `x` 的高度必定大于 `y`。

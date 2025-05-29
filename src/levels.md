@@ -1,22 +1,40 @@
-# Universe levels
+# 宇宙层级
 
-This section will describe universe levels from an implementation perspective, and will cover what readers need to know when it comes to type checking Lean declarations. More in-depth treatment of their role in Lean's type theory can be found in [TPIL4](https://lean-lang.org/theorem_proving_in_lean4/dependent_type_theory.html#types-as-objects), or section 2 of [Mario Carneiro's thesis](https://github.com/digama0/lean-type-theory)
+本节将从实现的角度讲解 **宇宙层级**（Universe levels）的相关内容，并说明类型检查 Lean 声明时读者需要掌握的重点。若要更深入了解宇宙层级在 Lean 类型理论中的作用，请参考 [TPIL4](https://lean-lang.org/theorem_proving_in_lean4/dependent_type_theory.html#types-as-objects)，或 [Mario Carneiro 博士论文](https://github.com/digama0/lean-type-theory)第 2 节。
 
-The syntax for universe levels is as follows:
+宇宙层级的语法定义如下：
 
 ```
 Level ::= Zero | Succ Level | Max Level Level | IMax Level Level | Param Name
 ```
 
-Properties of the `Level` type that readers should take note of are the existence of a partial order on universe levels, the presence of variables (the `Param` constructor), and the distinction between `Max` and `IMax`. 
+读者应特别注意 `Level` 类型的几个关键性质：
 
-`Max` simply constructs a universe level that represents the larger of the left and right arguments. For example, `Max(1, 2)` simplifies to `2`, and `Max(u, u+1)` simplifies to `u+1`. The `IMax` constructor represents the larger of the left and right arguments, *unless* the right argument simplifies to `Zero`, in which case the entire `IMax` resolves to `0`.
+* 存在宇宙层级上的偏序关系（partial order）。
+* 存在变量形式的层级，即 `Param` 构造子。
+* `Max` 和 `IMax` 两个构造子的区别。
 
-The important part about `IMax` is its interaction with the type inference procedure to ensure that, for example, `forall (x y : Sort 3), Nat` is inferred as `Sort 4`, but `forall (x y : Sort 3), True` is inferred as `Prop`.
+具体而言：
 
-## Partial order on levels
+* `Max` 构造出一个宇宙层级，表示左右参数中较大的那一个。例如：
 
-Lean's `Level` type is equipped with a partial order, meaning there's a "less than or equals" test we can perform on pairs of levels. The rather nice implementation below comes from Gabriel Ebner's Lean 3 checker [trepplein](https://github.com/gebner/trepplein/tree/master). While there are quite a few cases that need to be covered, the only complex matches are those relying on `cases`, which checks whether `x ≤ y` by examining whether `x ≤ y` holds when a parameter `p` is substituted for `Zero`, and when `p` is substituted for `Succ p`.
+  * `Max(1, 2)` 简化为 `2`
+  * `Max(u, u+1)` 简化为 `u+1`
+
+* `IMax` 同样表示左右参数中较大的那一个，**除非** 右边的参数化简到 `Zero`，此时整个 `IMax` 表达式会化简为 `0`。
+
+`IMax` 的重要作用在于配合类型推断过程，确保如下推断规则成立：
+
+* `forall (x y : Sort 3), Nat` 会被推断为 `Sort 4`，
+* 而 `forall (x y : Sort 3), True` 会被推断为 `Prop`。
+
+---
+
+## 宇宙层级上的偏序关系
+
+Lean 中的 `Level` 类型具备一个 **偏序关系**，意味着我们可以对任意两个层级进行“小于或等于”的测试。
+
+下述高质量的实现示例摘自 Gabriel Ebner 开发的 Lean 3 检查器 [trepplein](https://github.com/gebner/trepplein/tree/master)。尽管有许多情况需要逐一处理，但真正复杂的匹配只有那些依赖于 `cases` 的情形。`cases` 操作会检查 `x ≤ y` 是否成立，这通过分别将某个参数 `p` 替换为 `Zero` 或 `Succ p`，并据此判断 `x ≤ y` 是否依然成立来实现。
 
 ```
   leq (x y : Level) (balance : Integer): bool :=
@@ -50,12 +68,14 @@ Lean's `Level` type is equipped with a partial order, meaning there's a "less th
     leq (simplify $ subst l1 p (Succ p)) (simplify $ subst l2 p (Succ p))
 ```
 
-## Equality for levels
+## 宇宙层级的相等性
 
-The `Level` type recognizes equality by antisymmetry, meaning two levels `l1` and `l2` are equal if `l1 ≤ l2` and `l2 ≤ l1`.
+`Level` 类型通过反对称性（antisymmetry）来判定相等性，即：
 
-# Implementation notes
+如果两个宇宙层级 `l1` 和 `l2` 同时满足 `l1 ≤ l2` 和 `l2 ≤ l1` 则判定这两个层级是相等的。
 
-Be aware that the exporter does not export `Zero`, but it is assumed to be the 0th element of `Level`.
+# 实现细节（Implementation notes）
 
-For what it's worth, the implementation of `Level` does not have a large impact on performance, so don't feel the need to aggressively optimize here.
+特别注意：导出器（exporter）并不会显式导出 `Zero`，而是默认将其视作导入的 `Level` 序列中的第 0 个元素。
+
+值得一提的是，`Level` 类型的实现对整体性能并无显著影响，因此在此无需过于积极地进行优化。
