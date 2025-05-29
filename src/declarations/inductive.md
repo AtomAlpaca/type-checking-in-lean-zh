@@ -1,53 +1,46 @@
+# 归纳类型的秘密生活
 
-# The Secret Life of Inductive Types
+### 归纳声明
 
-### Inductive
+为了清晰起见，所谓“一个归纳声明”（Inductive）包括一个类型、一组构造子列表和一组递归器（recursors）。声明的类型和构造子由用户指定，递归器则由这两者派生。每个递归器还附带一组“递归规则”（也称计算规则），它们是用于 ι-归约（即模式匹配）的值级表达式。后续内容中，我们会尽量区分“归纳类型”和“归纳声明”这两个概念。
 
-For clarity, the whole shebang of "an inductive declaration" is a type, a list of constructors, and a list of recursors. The declaration's type and constructors are specified by the user, and the recursor is derived from those elements. Each recursor also gets a list of "recursor rules", also known as computation rules, which are value level expressions used in iota reduction (a fancy word for pattern matching). Going forward, we will do our best do distinguish between "an inductive type" and "an inductive declaration".
+Lean 内核原生支持互归纳声明（mutual inductive declarations），此时有一组（类型，构造子列表）配对。对于嵌套归纳声明，内核会临时将其转化为互归纳声明（下文详述）。
 
-Lean's kernel natively supports mutual inductive declarations, in which case there is a list of (type, list constructor) pairs. The kernel supports nested inductive declarations by temporarily transforming them to mutual inductives (more on this below).
+### 归纳类型（Inductive types）
 
-### Inductive types
+内核要求归纳声明中的“归纳类型”必须是真正的类型，而非值（`infer ty` 必须返回某个 `sort <n>`）。对于互归纳，所有声明的类型必须处于同一宇宙层级，且参数一致。
 
-The kernel requires the "inductive type" part of an inductive declaration to actually be a type, and not a value (`infer ty` must produce some `sort <n>`). For mutual inductives, the types being declared must all be in the same universe and have the same parameters.
+### 构造子
 
-### Constructor
+内核对归纳类型的每个构造子（Constructor）执行以下检查：
 
-For any constructor of an inductive type, the following checks are enforced by the kernel:
+* 构造子的类型/望远镜（telescope）必须与归纳类型的参数相同。
+* 构造子类型望远镜中非参数部分的绑定变量类型必须是类型（推断结果应为 `Sort _`）。
+* 构造子类型望远镜中任一非参数部分推断出的层级必须小于或等于归纳类型的层级，或者归纳类型本身是 `Prop`。
+* 构造子的参数中不得包含对正在声明类型的非正向（non-positive）出现（关于严格正性可参见[这里](https://counterexamples.org/strict-positivity.html?highlight=posi#positivity-strict-and-otherwise)）。
+* 构造子望远镜的结尾必须是对被声明归纳类型的合法参数应用。例如，要求 `List.cons` 的结尾是 `.. -> List A`，若结尾为 `.. -> Nat` 则是错误。
 
-+ The constructor's type/telescope has to share the same parameters as the type of the inductive being declared.
+#### 嵌套归纳
 
-+ For the non-parameter elements of the constructor type's telescope, the binder type must actually be a type (must infer as `Sort _`).
+检查嵌套归纳（Nested inductives）较为繁琐，需要临时将嵌套部分专门化为互归纳声明，从而只处理一组“普通”的互归纳，完成类型检查后再还原专门化声明。
 
-+ For any non-parameter element of the constructor type's telescope, the element's inferred sort must be less than or equal to the inductive type's sort, or the inductive type being declared has to be a prop.
+以包含嵌套构造 `Array Sexpr` 的 S 表达式定义为例：
 
-+ No argument to the constructor may contain a non-positive occurrence of the type being declared (readers can explore this issue in depth [here](https://counterexamples.org/strict-positivity.html?highlight=posi#positivity-strict-and-otherwise)).
-
-+ The end of the constructor's telescope must be a valid application of arguments to the type being declared. For example, we require the `List.cons ..` constructor to end with `.. -> List A`, and it would be an error for `List.cons` to end with `.. -> Nat`
-
-#### Nested inductives 
-
-Checking nested inductives is a more laborious procedure that involves temporarily specializing the nested parts of the inductive types in a mutual block so that we just have a "normal" (non-nested) set of mutual inductives, checking the specialized types, then unspecializing everything and admitting those types.
-
-Consider this definition of S-expressions, with the nested construction `Array Sexpr`:
-
-```
+```lean
 inductive Sexpr
 | atom (c : Char) : Sexpr
 | ofArray : Array Sexpr -> Sexpr
 ```
 
-Zooming out, the process of checking a nested inductive declaration has three steps:
+检查过程概括为三步：
 
-1. Convert the nested inductive declaration to a mutual inductive declaration by specializing the "container types" in which the current type is being nested. If the container type is itself defined in terms of other types, we'll need to reach those components for specialization as well. In the example above, we use `Array` as a container type, and `Array` is defined in terms of `List`, so we need to treat both `Array` and `List` as container types.
+1. 将嵌套归纳转为互归纳，通过专门化“容器类型”（container types）实现。若容器类型本身依赖其他类型，则需对其递归专门化。例中，`Array` 是容器类型，而 `Array` 定义依赖于 `List`，所以需同时将 `Array` 和 `List` 视为容器类型。
+2. 对互归纳类型执行常规检查与构造步骤。
+3. 将专门化的嵌套类型还原为原始形式，并将还原后的声明加入环境。
 
-2. Do the normal checks and construction steps for a mutual inductive type.
+上述定义的专门化示例如下：
 
-3. Convert the specialized nested types back to the original form (un-specializing), adding the recovered/unspecialized declarations to the environment.
-
-An example of this specialization would be the conversion of the `Sexpr` nested inductive above as:
-
-```
+```lean
 mutual
   inductive Sexpr
     | atom : Char -> Sexpr
@@ -62,9 +55,8 @@ mutual
 end
 ```
 
-Then recovering the original inductive declaration in the process of checking these types. To clarify, when we say "specialize", the new `ListSexpr` and `ArraySexpr` types above are specialized in the sense that they're defined only as lists and arrays of `Sexpr`, as opposed to being generic over some arbitrary type as with the regular `List` type.
+之后，在检查这些类型时还原成原始的嵌套声明。需注意，“专门化”是指新定义的 `ListSexpr` 和 `ArraySexpr` 类型仅表示 `Sexpr` 的列表和数组，而非像普通 `List` 类型那样对任意类型泛化。
 
+### 递归器
 
-### Recursors
-
-For now, see [iota reduction in the section on reduction](../type_checking/reduction.md#iota-reduction-pattern-matching)
+递归器（Recursors）相关内容请参见[归约章节中的ι-归约](../type_checking/reduction.md#iota-reduction-pattern-matching)。

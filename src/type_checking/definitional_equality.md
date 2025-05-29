@@ -1,63 +1,59 @@
-# Definitional equality
+# 定义等价
 
-Definitional equality is implemented as a function that takes two expressions as input, and returns `true` if the two expressions are definitionally equal within Lean's theory, and `false` if they are not.
+定义等价（Definitional equality）是一个函数，输入两个表达式，如果它们在 Lean 理论下定义等价，则返回 `true`，否则返回 `false`。
 
-Within the kernel, definitional equality is important simply because it's a necessary part of type checking. Definitional equality is still an important concept for Lean users who do not venture into the kernel, because definitional equalities are comparatively nice to work with in Lean's vernacular; for any `a` and `b` that are definitionally equal, Lean doesn't need any prompting or additional input from the user to determine whether two expressions are equal.
+在内核中，定义等价是类型检查的核心组成部分。即使对于不深入内核的 Lean 用户，定义等价仍然是重要概念，因为在 Lean 表层语言中，对于任意定义等价的表达式 `a` 和 `b`，无需额外提示即可判断它们相等。
 
-There are two big-picture parts of implementing the definitional equality procedure. First, the individual tests that are used to check for different definitional equalities. For readers who are just interested in understanding definitional equality from the perspective of an end user, this is probably what you want to know.
+实现定义等价分为两部分：一是用于检测各种定义等价的个别测试（这对用户理解定义等价很重要）；二是将这些测试结合归约和缓存等技术，提升性能以应对复杂度（这对编写类型检查器者尤为关键）。
 
-Readers interested in writing a type checker should also understand how the individual checks are composed along with reduction and caching to make the problem tractable; naively running each check and reducing along the way is likely to yield unacceptable performance results.
+## Sort 等价
 
-## Sort equality
+两个 `Sort` 表达式定义等价当且仅当它们的层级在偏序中通过反对称性相等：
 
-Two `Sort` expressions are definitionally equal if the levels they represent are equal by antisymmetry using the partial order on levels. 
-
-```
+```lean
 defEq (Sort x) (Sort y):
   x ≤ y ∧ y ≤ x
 ```
 
-## Const equality
+## Const 等价
 
-Two `Const` expressions are definitionally equal if their names are identical, and their levels are equal under antisymmetry.
+两个 `Const` 表达式定义等价当且仅当它们名称相同，且层级列表在反对称意义上相等：
 
-```
+```lean
 defEq (Const n xs) (Const m ys):
   n == m ∧ forall (x, y) in (xs, ys), antisymmEq x y
-
-  -- also assert that xs and ys have the same length if your `zip` doesn't do so.
+  -- 若 zip 不保证长度相等，还需断言 xs 与 ys 长度相同
 ```
 
-## Bound Variables
+## 绑定变量
 
-For implementations using a substitution-based strategy like locally nameless (if you're following the C++ or lean4lean implementations, this is you), encountering a bound variable is an error; bound variables should have been replaced during weak reduction if they referred to an argument, or they should have been replaced with a free variable via strong reduction as part of a definitional equality check for a pi or lambda expression.
+采用基于替换的实现（如局部无名法，C++或lean4lean实现）时，遇到绑定变量表示错误；因为弱归约时引用参数的绑定变量应已被替换，强归约时用于 pi 或 lambda 的定义等价检查时绑定变量应被自由变量替代。
 
-For closure-based implementations, look up the elements corresponding to the bound variables and assert that they are definitionally equal.
+基于闭包的实现中，应查找绑定变量对应元素并断言定义等价。
 
-## Free Variables
+## 自由变量
 
-Two free variables are definitionally equal if they have the same identifier (unique ID or deBruijn level). Assertions about the equality of the binder types should have been performed wherever the free variables were constructed (like the definitional equality check for pi/lambda expressions), so it is not necessary to re-check that now.
+两个自由变量定义等价当且仅当它们的标识符相同（唯一ID或deBruijn层级）。绑定类型的等价断言应在自由变量创建时完成，无需重复检查。
 
-```
+```lean
 defEqFVar (id1, _) (id2, _):
   id1 == id2
 ```
 
-## App
+## 应用（App）
 
-Two application expressions are definitionally equal if their function component and argument components are definitionally equal.
+两个应用表达式定义等价当且仅当其函数部分和参数部分分别定义等价：
 
-```
+```lean
 defEqApp (App f a) (App g b):
   defEq f g && defEq a b
 ```
 
+## Pi 表达式
 
-## Pi
+两个 Pi 表达式定义等价当且仅当它们的绑定类型定义等价，且将合适自由变量代入主体后主体定义等价：
 
-Two Pi expressions are definitionally equal if their binder types are definitionally equal, and their body types, after substituting in the appropriate free variable, are definitionally equal.
-
-```
+```lean
 defEq (Pi s a) (Pi t b)
   if defEq s.type t.type
   then
@@ -67,11 +63,11 @@ defEq (Pi s a) (Pi t b)
     false
 ```
 
-## Lambda
+## Lambda 表达式
 
-Lambda uses the same test as Pi:
+Lambda 的定义等价测试与 Pi 相同：
 
-```
+```lean
 defEq (Lambda s a) (Lambda t b)
   if defEq s.type t.type
   then
@@ -81,11 +77,11 @@ defEq (Lambda s a) (Lambda t b)
     false
 ```
 
-## Structural eta
+## 结构的 η 等价（Structural eta）
 
-Lean recognizes definitional equality of two elements `x` and `y` if they're both instances of some structure type, and the fields are definitionally equal using the following procedure comparing the constructor arguments of one and the projected fields of the other:
+当两个元素 `x` 和 `y` 均属于某结构类型，且其构造子参数与投影字段定义等价时，Lean 认定它们定义等价。具体做法是：
 
-```
+```lean
 defEqEtaStruct x y:
   let (yF, yArgs) := unfoldApps y
   if 
@@ -95,44 +91,41 @@ defEqEtaStruct x y:
     && defEq (infer x) (infer y)
   then
     forall i in 0..t.numFields, defEq Proj(i+T.numParams, x) yArgs[i+T.numParams]
-
-    -- we add `T.numParams` to the index because we only want 
-    -- to test the non-param arguments. we already know the 
-    -- parameters are defEq because the inferred types are 
-    -- definitionally equal.
+  -- 这里给索引加上 `T.numParams`，因为我们只想测试非参数部分的参数。
+  -- 参数部分已经不必测试，因为推断出的类型已经定义等价。
 ```
 
-The more pedestrian case of congruence `T.mk a .. N` = `T.mk x .. M` if `[a, .., N] = [x, .., M]`, is simply handled by the `App` test.
+更简单的情况（如 `T.mk a .. N = T.mk x .. M` 当且仅当 `[a, .., N] = [x, .., M]`）由 `App` 测试处理。
 
-## Unit-like equality
+## 类单元类型等价（Unit-like equality）
 
-Lean recognizes definitional equality of two elements `x: S p_0 .. p_N` and `y: T p_0 .. p_M` under the following conditions:
+Lean 认定两个元素 `x: S p_0 .. p_N` 和 `y: T p_0 .. p_M` 定义等价，若：
 
-+ `S` is an inductive type
-+ `S` has no indices
-+ `S` has only one constructor which takes no arguments other than the parameters of `S`, `p_0 .. p_N`
-+ The types `S p_0 .. p_N` and `T p0 .. p_M` are definitionally equal
+* `S` 是归纳类型；
+* `S` 无指标（indices）；
+* `S` 仅有一个构造子，且除参数 `p_0 .. p_N` 外无其他参数；
+* `S p_0 .. p_N` 和 `T p_0 .. p_M` 定义等价。
 
-Intuitively this definitional equality is fine, because all of the information that elements of these types can convey is captured by their types, and we're requiring those types to be definitionally equal.
+此处定义等价合理，因为这些类型的元素所有信息均由其类型决定。
 
-## Eta expansion
+## η 展开（Eta expansion）
 
-```
+```lean
 defEqEtaExpansion x y : bool :=
   match x, (whnf $ infer y) with
   | Lambda .., Pi binder _ => defEq x (App (Lambda binder (Var 0)) y)
   | _, _ => false
 ```
 
-The lambda created on the right, `(fun _ => $0) y` trivially reduces to `y`, but the addition of the lambda binder gives the `x` and `y'` a chance to match with the rest of the definitional equality procedure.
+右侧创建的 lambda `(fun _ => $0) y` 显然归约为 `y`，但 lambda 绑定器的加入使 `x` 与 `y'` 能在定义等价的其余流程中匹配。
 
-## Proof irrelevant equality
+## 证明无关等价
 
-Lean treats proof irrelevant equality as definitional. For example, Lean's definitional equality procedure treats any two proofs of `2 + 2 = 4` as definitionally equal expressions.
+Lean 将证明无关等价（Proof irrelevant equality）视为定义等价。例如，任何两个证明 `2 + 2 = 4` 的表达式在定义等价检查中视为相等。
 
-If a type `T` infers as `Sort 0`, we know it's a proof, because it is an element of `Prop` (remember that `Prop` is `Sort 0`).
+若类型 `T` 被推断为 `Sort 0`（即 `Prop` 的元素），则它是一个证明。
 
-```
+```lean
 defEqByProofIrrelevance p q :
   infer(p) == S ∧ 
   infer(q) == T ∧
@@ -141,13 +134,13 @@ defEqByProofIrrelevance p q :
   defEq(S, T)
 ```
 
-If `p` is a proof of type `A` and `q` is a proof of type `B`, then if `A` is definitionally equal to `B`, `p` and `q` are definitionally equal by proof irrelevance.
+若 `p` 是类型 `A` 的证明，`q` 是类型 `B` 的证明，且 `A` 定义等价于 `B`，则 `p` 和 `q` 通过证明无关性被视为定义等价。
 
-## Natural numbers (nat literals)
+## 自然数字面量
 
-Two nat literals are definitionally equal if they can be reduced to `Nat.zero`, or they can be reduced as (`Nat.succ x`, `Nat.succ y`), where `x` and `y` are definitionally equal.
+两个自然数字面量定义等价当且仅当它们归约为 `Nat.zero`，或归约为 `(Nat.succ x, Nat.succ y)` 且 `x` 与 `y` 定义等价。
 
-```
+```lean
 match X, Y with
 | Nat.zero, Nat.zero => true
 | NatLit 0, NatLit 0 => true
@@ -157,24 +150,31 @@ match X, Y with
 | _, _ => false
 ```
 
-## String literal
+## 字符串字面量
 
-`StringLit(s), App(String.mk, a)`
+字符串字面量 `s` 被转换为
 
-The string literal `s` is converted to an application of `Const(String.mk, [])` to a `List Char`. Because Lean's `Char` type is used to represent unicode scalar values, their integer representation is a 32-bit unsigned integer.
+```
+App(Const(String.mk, []), List Char)
+```
 
-To illustrate, the string literal "ok", which uses two characters corresponding to the 32 bit unsigned integers `111` and `107` is converted to:
+因为 Lean 的 `Char` 用于表示 Unicode 标量值，对应的整数是 32 位无符号整数。
 
->(String.mk (((List.cons Char) (Char.ofNat.[] NatLit(111))) (((List.cons Char) (Char.ofNat NatLit(107))) (List.nil Char))))
+例如字符串 `"ok"`（由字符对应的 32 位无符号整数 111 和 107 组成）被转换为：
 
-## Lazy delta reduction and congruence
+```
+String.mk (((List.cons Char) (Char.ofNat NatLit(111))) (((List.cons Char) (Char.ofNat NatLit(107))) (List.nil Char)))
+```
 
-The available kernel implementations implement a "lazy delta reduction" procedure as part of the definitional equality check, which unfolds definitions lazily using [reducibility hints](./declarations.md#reducibility-hints) and checks for congruence when things look promising. This is a much more efficient strategy than eagerly reducing both expressions completely before checking for definitional equality.
+## 惰性 δ-归约与合取（Lazy delta reduction and congruence）
 
-If we have two expressions `a` and `b`, where `a` is an application of a definition with height 10, and `b` is an application of a definition with height 12, the lazy delta procedure takes the more efficient route of unfolding `b` to try and get closer to `a`, as opposed to unfolding both of them completely, or blindly choosing one side to unfold.
+现有内核实现将“惰性 δ-归约”作为定义等价检查的一部分，利用[可展性提示](./declarations.md#reducibility-hints)延迟展开定义，并在可能相符时进行合取检查。这比完全展开两个表达式后再检查定义等价更高效。
 
-If the lazy delta procedure finds two expressions which are an application of a `const` expression to arguments, and the `const` expressions refer to the same declaration, the expressions are checked for congruence (whether they're the same consts applied to definitionally equal arguments). Congruence failures are cached, and for readers writing their own kernel, caching these failures turns out to be a performance critical optimization, since the congruence check involves a potentially expensive call to `def_eq_args`.
+假设有表达式 `a` 是高度为 10 的定义的应用，`b` 是高度为 12 的定义的应用，惰性 δ-归约会优先展开 `b` 以接近 `a`，而非盲目完全展开或随意选择一侧展开。
 
-## Syntactic equality (also structural or pointer equality)
+当惰性 δ-归约遇到两个应用了相同声明的 `const` 表达式时，会检查它们是否合取（即是否是同一常量应用于定义等价的参数）。合取失败会被缓存。对于自行实现内核的读者来说，缓存合取失败是关键性能优化，因为合取检查可能涉及开销较大的参数定义等价比较。
 
-Two expressions are definitionally equal if they refer to exactly the same implementing object, as long as the type checker ensures that two objects are equal if and only if they are constructed from the same components (where the relevant constructors are those for Name, Level, and Expr).
+
+## 语法相等（Syntactic equality，也称结构或指针相等）
+
+两个表达式定义等价当且仅当它们指向完全相同的实现对象，前提是类型检查器确保两个对象当且仅当它们由相同组件（Name、Level、Expr 构造子）构造时相等。

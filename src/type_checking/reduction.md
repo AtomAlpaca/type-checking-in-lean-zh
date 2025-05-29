@@ -1,20 +1,24 @@
-# Reduction
+# 归约
 
-Reduction is about nudging expressions toward their [normal form](https://en.wikipedia.org/wiki/Normal_form_(abstract_rewriting)) so we can determine whether expressions are definitionally equal. For example, we need to perform beta reduction to determine that `(fun x => x) Nat.zero` is definitionally equal to `Nat.zero`, and delta reduction to determine that `id List.nil` is definitionally equal to `List.nil`. 
+归约（Reduction）旨在推动表达式趋近其[规范形式](https://en.wikipedia.org/wiki/Normal_form_%28abstract_rewriting%29)，以便判断表达式是否定义等价。例如，我们需要执行 β 归约来确定 `(fun x => x) Nat.zero` 定义等价于 `Nat.zero`，以及执行 δ 归约来确定 `id List.nil` 定义等价于 `List.nil`。
 
-Reduction in Lean's kernel has two properties that introduce concerns which sometimes go unaddressed in basic textbook treatments of the topic. First, reduction in some cases is interleaved with inference. Among other things, this means reduction may need to be performed with open terms, even though the reduction procedures themselves are not creating free variables. Second, `const` expressions which are applied to multiple arguments may need to be considered together with those arguments during reduction (as in iota reduction), so sequences of applications need to be unfolded together at the beginning of reduction. 
+Lean 内核的归约有两个特殊性质，常被基础教材忽略：
 
-## Beta reduction 
+1. 归约有时与类型推断交织进行，意味着归约可能在开放项（open terms）上执行，尽管归约过程本身不产生自由变量。
 
-Beta reduction is about reducing function application. Concretely, the reduction:
+2. 对于应用了多个参数的 `const` 表达式，归约时可能需要将其与参数一并考虑（例如 ι 归约），因此应用序列需在归约开始时一并展开。
 
-```
+## β 归约
+
+β 归约（Beta reduction）即函数应用的归约。具体如：
+
+```lean
 (fun x => x) a    ~~>    a
 ```
 
-An implementation of beta reduction must despine an expression to collect any arguments in `app` expressions, check whether the expression to which they're applied is a lambda, then substitute the appropriate argument for any appearances of the corresponding bound variable in the function body:
+实现时需要将表达式“去脊”（despine），收集所有 `app` 应用的参数，检查被应用的表达式是否为 lambda，然后用对应参数替换函数体中相应的绑定变量：
 
-```
+```lean
 betaReduce e:
   betaReduceAux e.unfoldApps
 
@@ -24,9 +28,9 @@ betaReduceAux f args:
   | _, _ => foldApps f args
 ```
 
-An important performance optimization for the instantiation (substitution) component of beta reduction is what's sometimes referred to as "generalized beta reduction", which involves gathering the arguments that have a corresponding lambda and substituting them in all at once. This optimization means that for `n` sequential lambda expressions with applied arguments, we only perform one traversal of the expression to substitute the appropriate arguments, instead of `n` traversals.
+性能优化中常用“广义 β 归约”（generalized beta reduction），即将所有对应的参数一次性替换，避免对 `n` 个连续 lambda 表达式做 `n` 次遍历：
 
-```
+```lean
 betaReduce e:
   betaReduceAux e.unfoldApps []
 
@@ -36,98 +40,95 @@ betaReduceAux f remArgs argsToApply:
   | _, _ => foldApps (inst f argsToApply) remArgs
 ```
 
-## Zeta reduction (reducing `let` expressions)
+## ζ 归约（Zeta reduction，let 表达式归约）
 
-Zeta reduction is a fancy name for reduction of `let` expressions. Concretely, reducing 
+ζ 归约即 `let` 表达式的归约。例：
 
-```
+```lean
 let (x : T) := y; x + 1    ~~>    (y : T) + 1
 ```
 
-An implementation can be as simple as:
+简单实现：
 
-```
+```lean
 reduce Let _ val body:
   instantiate body val
 ```
 
-## Delta reduction (definition unfolding)
+## δ 归约（Delta reduction，定义展开）
 
-Delta reduction refers to unfolding definitions (and theorems). Delta reduction is done by replacing a `const ..` expr with the referenced declaration's value, after swapping out the declaration's generic universe parameters for the ones that are relevant to the current context. 
+δ 归约是展开定义（及定理）。将 `const ..` 表达式替换为其引用声明的值，替换时要将声明的泛型宇宙参数替换为当前上下文对应的宇宙层级。
 
-If the current environment contains a definition `x` which was declared with universe parameters `u*`and value `v`, then we may delta reduce an expression `Const(x, w*)` by replacing it with `val`, then substituting the universe parameters `u*` for those in `w*`.
+若环境中声明 `x` 具有宇宙参数 `u*` 和值 `v`，则表达式 `Const(x, w*)` 可 δ 归约为
 
-```
-deltaReduce Const name levels:
-  if environment[name] == (d : Declar) && d.val == v then
-  substituteLevels (e := v) (ks := d.uparams) (vs := levels)
+```lean
+substituteLevels (e := v) (ks := d.uparams) (vs := levels)
 ```
 
-If we had to remove any applied arguments to reach the `const` expression that was delta reduced, those arguments should be reapplied to the reduced definition.
+若归约过程中移除了应用到 `const` 上的参数，则归约后应重新应用这些参数。
 
-## Projection reduction
+## 投影归约
 
-A `proj` expression has a natural number index indicating the field to be projected, and another expression which is the structure itself. The actual expression comprising the structure should be a sequence of arguments applied to `const` referencing a constructor.
+`proj` 表达式包含投影字段的自然数索引和结构体表达式。结构体本质上是一系列应用于构造子的参数。
 
-Keep in mind that for fully elaborated terms, the arguments to the constructor will include any parameters, so an instance of the `Prod` constructor would be e.g. `Prod.mk A B (a : A) (b : B)`.
+注意：构造子参数包括所有参数，且投影索引从 0 开始计数，0 表示跳过所有参数后的第一个非参数字段，因为投影不能访问参数。
 
-The natural number indicating the projected field is 0-based, where 0 is the first *non-parameter* argument to the constructor, since a projection cannot be used to access the structure's parameters.
+归约时，将结构体归约为弱头范式，展开应用得 `(constructor, args)`，再返回
 
-With this in mind, it becomes clear that once we despine the constructor's arguments into `(constructor, [arg0, .., argN])`, we can reduce the projection by simply taking the argument at position `i + num_params`, where `num_params` is what it sounds like, the number of parameters for the structure type.
-
-```
-reduce proj fieldIdx structure:
-  let (constructorApp, args) := unfoldApps (whnf structure)
-  let num_params := environment[constructorApp].num_params
-  args[fieldIdx + numParams]
-
-  -- Following our `Prod` example, constructorApp will be `Const(Prod.mk, [u, v])`
-  -- args will be `[A, B, a, b]`
+```lean
+args[fieldIdx + numParams]
 ```
 
-### Special case for projections: String literals
+例如，`Prod.mk` 的构造子为 `Const(Prod.mk, [u, v])`，参数为 `[A, B, a, b]`。
 
-The kernel extension for string literals introduces one special case in projection reduction, and one in iota reduction. 
+### 字符串字面量的特殊投影归约
 
-Projection reduction for string literals: Because the projection expression's structure might reduce to a string literal (Lean's `String` type is defined as a structure with one field, which is a `List Char`)
+字符串字面量扩展在投影归约和 ι 归约时各有特殊处理。
 
-If the structure reduces as a `StringLit (s)`, we convert that to `String.mk (.. : List Char)` and proceed as usual for projection reduction.
+投影归约中，结构体可能归约为字符串字面量 `StringLit(s)`，此时转为
 
-
-
-## Nat literal reduction
-
-The kernel extension for nat literals includes reduction of `Nat.succ` as well as the binary operations of addition, subtraction, multiplication, exponentiation, division, mod, boolean equality, and boolean less than or equal.
-
-If the expression being reduced is `Const(Nat.succ, []) n` where `n` can be reduced to a nat literal `n'`, we reduce to `NatLit(n'+1)`
-
-If the expression being reduced is `Const(Nat.<binop>, []) x y` where `x` and `y` can be reduced to nat literals `x'` and `y'`, we apply the native version of the appropriate `<binop>` to `x'` and `y'`, returning the resulting nat literal.
-
-
-Examples:
-```
-Const(Nat.succ, []) NatLit(100) ~> NatLit(100+1)
-
-Const(Nat.add, []) NatLit(2) NatLit(3) ~> NatLit(2+3)
-
-Const(Nat.add, []) (Const Nat.succ [], NatLit(10)) NatLit(3) ~> NatLit(11+3)
+```lean
+String.mk (.. : List Char)
 ```
 
-## Iota reduction (pattern matching)
+并按常规投影归约处理。
 
-Iota reduction is about applying reduction strategies that are specific to, and derived from, a given inductive declaration. What we're talking about is application of an inductive declaration's recursor (or the special case of `Quot` which we'll see later).
+## 自然数字字面量归约
 
-Each recursor has a set of "recursor rules", one recursor rule for each constructor. In contrast to the recursor, which presents as a type, these recursor rules are value level expressions showing how to eliminate an element of type `T` created with constructor `T.c`. For example, `Nat.rec` has a recursor rule for `Nat.zero`, and another for `Nat.succ`.
+自然数字字面量扩展支持 `Nat.succ` 的归约及二元运算（加减乘除、指数、模运算、布尔相等、小于等于）。
 
-For an inductive declaration `T`, one of the elements demanded by `T`'s recursor is an actual `(t : T)`, which is the thing we're eliminating. This `(t : T)` argument is known as the "major premise". Iota reduction performs pattern matching by taking apart the major premise to see what constructor was used to make `t`, then retrieving and applying the corresponding recursor rule from the environment.
+归约规则示例：
 
-Because the recursor's type signature also demands the parameters, motives, and minor premises required, we don't need to change the arguments to the recursor to perform reduction on e.g. `Nat.zero` as opposed to `Nat.succ`.
+* 表达式 `Const(Nat.succ, []) n`，若 `n` 可归约为自然数字字面量 `n'`，则归约为 `NatLit(n' + 1)`。
+* 表达式 `Const(Nat.<binop>, []) x y`，若 `x, y` 可归约为自然数字字面量 `x', y'`，则归约为二元操作 `<binop>` 作用于 `x', y'` 的结果。
 
-In practice, it's sometimes necessary to do some initial manipulation to expose the constructor used to create the major premise, since it may not be found as a direct application of a constructor. For example, a `NatLit(n)` expression will need to be transformed into either `Nat.zero`, or `App Const(Nat.succ, []) ..`. For structures, we may also perform structural eta expansion, transforming an element `(t : T)` into `T.mk t.1 .. t.N`, thereby exposing the application of the `mk` constructor, permitting iota reduction to proceed (if we can't figure out what constructor was used to create the major premise, reduction fails).
+示例：
+
+```lean
+Const(Nat.succ, []) NatLit(100) ~> NatLit(101)
+
+Const(Nat.add, []) NatLit(2) NatLit(3) ~> NatLit(5)
+
+Const(Nat.add, []) (Const Nat.succ [], NatLit(10)) NatLit(3) ~> NatLit(14)
+```
+
+## ι 归约（Iota reduction，模式匹配）
+
+ι 归约针对归纳声明的递归器展开归约，或特例 `Quot`。
+
+每个递归器有对应构造子的一组递归规则，这些规则为值级表达式，描述如何消解由构造子构造的类型元素。例如，`Nat.rec` 对 `Nat.zero` 和 `Nat.succ` 各有一个递归规则。
+
+对于归纳声明 `T`，递归器接收的“主要前提”（major premise）是某个 `(t : T)`，ι 归约通过拆解该前提，确定其用哪个构造子创建，进而从环境中检索对应递归规则并应用。
+
+递归器类型签名同时包含参数、动机和次要前提，因此无需修改递归器参数即可对 `Nat.zero` 或 `Nat.succ` 等不同情况归约。
+
+实际中，有时需要先将主要前提转换成构造子的直接应用形式，才能找到对应构造子。例如，`NatLit(n)` 会被转换为 `Nat.zero` 或 `App Const(Nat.succ, []) ...`。
+
+对于结构体，还可能执行结构 η 展开，将 `(t : T)` 转为 `T.mk t.1 .. t.N`，显露构造子 `mk`，使得 ι 归约得以继续；否则归约失败。
 
 ## List.rec type
 
-```
+```lean
 forall 
   {α : Type.{u}} 
   {motive : (List.{u} α) -> Sort.{u_1}}, 
@@ -137,7 +138,7 @@ forall
 
 ## List.nil rec rule
 
-```
+```lean
 fun 
   (α : Type.{u}) 
   (motive : (List.{u} α) -> Sort.{u_1}) 
@@ -148,7 +149,7 @@ fun
 
 ## List.cons rec rule
 
-```
+```lean
 fun 
   (α : Type.{u}) 
   (motive : (List.{u} α) -> Sort.{u_1}) 
@@ -159,32 +160,41 @@ fun
   consCase head tail (List.rec.{u_1, u} α motive nilCase consCase tail)
 ```
 
+### k-型归约（k-like reduction）
 
-### k-like reduction
+对于某些归纳类型，被称为“子单元消解器”（subsingleton eliminators），即使主要前提的构造子未直接暴露，只要知道其类型，也可以继续执行 ι 归约。这种情况可能发生在主要前提是自由变量时。之所以允许，是因为子单元消解器的所有元素都是相同的。
 
-For some inductive types, known as "subsingleton eliminators", we can proceed with iota reduction even when the major premise's constructor is not directly exposed, as long as we know its type. This may be the case when, for example, the major premise appears as a free variable. This is known as k-like reduction, and is permitted because all elements of a subsingleton eliminator are identical. 
+要成为子单元消解器，归纳声明必须满足：
 
-To be a subsingleton eliminator, an inductive declaration must be an inductive prop, must not be a mutual or nested inductive, must have exactly one constructor, and the sole constructor must take only the type's parameters as arguments (it cannot "hide" any information that isn't fully captured in its type signature).
+* 是归纳命题；
+* 不是互归纳或嵌套归纳；
+* 只有一个构造子；
+* 唯一的构造子仅接受该类型的参数作为参数（不能隐藏类型签名中未完全体现的信息）。
 
-For example, the value of any element of the type `Eq Char 'x'` is fully determined just by its type, because all elements of this type are identical.
+举例来说，类型 `Eq Char 'x'` 的任意元素的值完全由其类型决定，因为该类型的所有元素均相同。
 
-If iota reduction finds a major premise which is a subsingleton eliminator, it is permissible to substitute the major premise for an application of the type's constructor, because that is the only element the free variable could actually be. For example, a major premise which is a free variable of type `Eq Char 'a'` may be substituted for an explicitly constructed `Eq.refl Char 'a'`.
+当 ι 归约遇到一个子单元消解器的主要前提时，可以将该前提替换为该类型构造子的应用，因为自由变量只能是该唯一元素。例如，类型为 `Eq Char 'a'` 的自由变量可以被替换为显式构造的 `Eq.refl Char 'a'`。
 
-Getting to the nuts and bolts, if we neglected to look for and apply k-like reduction, free variables that are subsingleton eliminators would fail to identify the corresponding recursor rule, iota reduction would fail, and certain conversions expected to succeed would no longer succeed.
+如果忽略 k-型归约，自由变量作为子单元消解器时将无法识别对应的递归规则，导致 ι 归约失败，使某些预期成功的转换无法完成。
 
-### `Quot` reduction; `Quot.ind` and `Quot.lift`
+### Quot 归约：`Quot.ind` 和 `Quot.lift`
 
-`Quot` introduces two special cases which need to be handled by the kernel, one for `Quot.ind`, and one for `Quot.lift`.
+`Quot` 引入了两个需要内核特殊处理的案例，分别对应 `Quot.ind` 和 `Quot.lift`。
 
-Both `Quot.ind` and `Quot.lift` deal with application of a function `f` to an argument `(a : α)`, where the `a` is a component of some `Quot r`, formed with `Quot.mk r a`. 
+二者都涉及将函数 `f` 应用于参数 `(a : α)`，其中 `a` 是某个由 `Quot.mk r a` 形成的 `Quot r` 的组成部分。
 
-To execute the reduction, we need to pull out the argument that is the `f` element and the argument that is the `Quot` where we can find `(a : α)`, then apply the function `f` to `a`. Finally, we reapply any arguments that were part of some outer expression not related to the invocation of `Quot.ind` or `Quot.lift`.
+执行归约时，需要：
 
-Since this is only a reduction step, we rely on the type checking phases done elsewhere to provide assurances that the expression as a whole is well typed.
+* 取出函数 `f`；
+* 取出包含 `(a : α)` 的 `Quot` 参数；
+* 将 `f` 应用于 `a`；
+* 最后重新应用所有与 `Quot.ind` 或 `Quot.lift` 调用无关的外层表达式中的其他参数。
 
-The type signatures for `Quot.ind` and `Quot.mk` are recreated below, mapping the elements of the telescope to what we should find as the arguments. The elements with a `*` are the ones we're interested in for reduction.
+由于这只是归约步骤，整体表达式的类型正确性依赖于其他阶段的类型检查保证。
 
-```
+下述为 `Quot.ind` 和 `Quot.mk` 的类型签名片段，展示望远镜参数与归约时关心的参数对应关系，其中带 `*` 的元素为归约关注点。
+
+```lean
 Quotient primitive Quot.ind.{u} : ∀ {α : Sort u} {r : α → α → Prop} 
   {β : Quot r → Prop}, (∀ (a : α), β (Quot.mk r a)) → ∀ (q : Quot r), β q
 
@@ -196,7 +206,7 @@ Quotient primitive Quot.ind.{u} : ∀ {α : Sort u} {r : α → α → Prop}
   ...
 ```
 
-```
+```lean
 Quotient primitive Quot.lift.{u, v} : {α : Sort u} →
   {r : α → α → Prop} → {β : Sort v} → (f : α → β) → 
   (∀ (a b : α), r a b → f a = f b) → Quot r → β

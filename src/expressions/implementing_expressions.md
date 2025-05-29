@@ -32,7 +32,7 @@ def mkApp x y:
 
 ## 自由绑定变量数量的示例实现
 
-```
+```lean
 numLooseBVars e:
     match e with
     | Sort | Const | FVar | StringLit | NatLit => 0
@@ -52,7 +52,7 @@ numLooseBVars e:
 * 对于表达式 `Var(0)`，需要在该绑定变量之上包裹 1 个绑定器，变量才不再松弛。
 * 对于表达式 `Var(3)`，需要包裹 4 个绑定器：
 
-```
+```lean
 --  索引：3 2 1 0
 fun a b c d => Var(3)
 ```
