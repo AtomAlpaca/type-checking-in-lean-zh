@@ -14,7 +14,7 @@
 
 之所以要隔离出一个小型内核，并要求 Lean 中的定义被翻译成一种**最简内核语言**，目的在于提高证明系统的可信度。Lean 的设计允许使用者在功能完备的证明助理中工作，享受强大的元编程、丰富的编辑器支持和可扩展语法；同时又能把构造出的证明项导出为一种形式，使人们**无需信任那些实现高级特性的代码**，也能独立验证其正确性——这些高级特性正是 Lean（作为证明助理）高效且易用的原因。
 
-在 [*Certified Programming with Dependent Types*](http://adam.chlipala.net/cpdt/) 一书第 1.2.3 节中，Adam Chlipala 提出了通常称为 \*\*de Bruijn 准则（de Bruijn criterion）\*\*或 **de Bruijn 原则**的概念：
+在 [*Certified Programming with Dependent Types*](http://adam.chlipala.net/cpdt/) 一书第 1.2.3 节中，Adam Chlipala 提出了通常称为 **de Bruijn 准则（de Bruijn criterion）** 或 **de Bruijn 原则**的概念：
 
 > 当证明助理即便采用复杂且可扩展的策略来搜索证明，也会输出可在小型内核语言中表达的证明项时，就满足了 “de Bruijn 准则”。这些核心语言的特性复杂度大致与形式化数学基础（如 ZF 集合论）的提案相当。要相信一个证明，我们可以无视搜索过程中的潜在错误，只依赖一个（相对较小的）**证明检查内核**来验证搜索结果。
 
